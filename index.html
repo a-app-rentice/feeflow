@@ -955,10 +955,10 @@ async out(){try{if(this.ses)await this.raw("/auth/v1/logout?scope=local",{m:"POS
 SB.init();
 
 /* ===== v20 CLOUD LAYER: login, OTP, forgot password, sync, plan ===== */
-const APP_VER=20;
+const APP_VER=21;
 const CLD={v:"boot",email:"",biz:"",cd:0,uid:null,sub:null,ua:"",last:0,cfg:{},busy:0};
 let cldT=0;
-document.head.insertAdjacentHTML("beforeend","<style>.lk:disabled{opacity:.5;cursor:default}.cbn{position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:40;max-width:496px;margin:auto;border:0;border-radius:14px;padding:12px 14px;background:var(--tx);color:var(--bg);font:700 14px var(--f);text-align:left;cursor:pointer}.otp{letter-spacing:.35em;text-align:center;font-size:24px;font-weight:800}</style>");
+document.head.insertAdjacentHTML("beforeend","<style>.lk:disabled{opacity:.5;cursor:default}.cbn{position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:40;max-width:496px;margin:auto;border:0;border-radius:14px;padding:12px 14px;background:var(--tx);color:var(--bg);font:700 14px var(--f);text-align:left;cursor:pointer}.ldr{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg)}.spn{width:42px;height:42px;border-radius:50%;border:4px solid rgba(128,128,128,.25);border-top-color:#5b4bff;animation:cspn .8s linear infinite}@keyframes cspn{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spn{animation-duration:2.4s}}.otp{letter-spacing:.35em;text-align:center;font-size:24px;font-weight:800}</style>");
 const cldHead=(t,s)=>`<div class="hero sm"><div class="top">${logo}${thb()}</div><h1 class="ah">${t}</h1><p class="mu">${s}</p></div>`;
 const cldOk=e=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 const cldEm=()=>($("em")?$("em").value:CLD.email).trim().toLowerCase();
@@ -968,7 +968,8 @@ function cldTo(v){if($("em"))CLD.email=cldEm();CLD.v=v;render()}
 function cldSent(v,msg){CLD.v=v;CLD.cd=Date.now()+30000;render();toast(msg||"Code sent to "+CLD.email)}
 /* screens */
 function cldView(){const v=CLD.v;
-if(v==="boot")return app(`<div class="w">${cldHead("FeeFlow","Loading your account…")}</div>`);
+if(v==="boot")return app(`<div class="ldr" role="status" aria-label="Loading"><div class="spn"></div></div>`);
+if(v==="adm"){app(`<div id="admroot"></div>`);return cldAdminLoad().then(()=>FFA.mount($("admroot"),{me:{id:CLD.uid,email:CLD.email},logo,onLogout:cldOut,onMember:cldMember})).catch(cldErr)}
 if(v==="cfg")return app(`<div class="w">${cldHead("Setup needed","Open config.js, paste your Supabase project URL and anon key, then reload.")}</div>`);
 if(v==="blk")return app(`<div class="w">${cldHead("Account blocked","This account has been blocked. Contact support if you think this is a mistake.")}<button class="b s w" onclick="cldOut()">Log out</button></div>`);
 if(v==="in"||v==="up"){const up=v==="up";
@@ -1003,19 +1004,26 @@ function cldResend(){if(Date.now()<CLD.cd)return;cldGo(async()=>{CLD.v==="otp"?a
 function cldFg(){const em=cldEm();cldGo(async()=>{if(!cldOk(em))return toast("Enter a valid email");CLD.email=em;await SB.recover(em);cldSent("rotp")})}
 function cldNp(){const a=$("p1").value,b=$("p2").value;cldGo(async()=>{if(a.length<8)return toast("Password needs at least 8 characters");if(a!==b)return toast("Passwords don’t match");await SB.setPassword(a);await cldEnter(true);toast("Password updated")})}
 /* session start */
-async function cldBoot(){ses=null;D=null;if(!SB.ready()){CLD.v="cfg";return render()}CLD.v="boot";render();
+async function cldBoot(){ses=null;D=null;if(!SB.ready()){CLD.v="cfg";return render()}
+const s=SB.ses,u=s&&s.user,em=u&&u.email?u.email.toLowerCase():"",c=em?LS.g("ff_d_"+em,null):null;
+if(u&&c&&c.pin){/* PIN lock set: show the lock at once and sync quietly in the background */
+const cs=LS.g("ff_cs",null);CLD.uid=u.id;CLD.email=em;CLD.sub=(cs&&cs.uid===u.id&&cs.sub)||{plan:"free"};
+ses=em;DC[em]=c;load();cldPlan();CLD.v="app";render();
+if(await SB.fresh()){try{await cldEnter(false,true)}catch(e){cldErr(e)}}else cldLost();return}
+CLD.v="boot";render();
 if(SB.ses&&await SB.fresh()){try{await cldEnter(false)}catch(e){cldErr(e);CLD.v="in";render()}}else{CLD.v="in";render()}}
-async function cldEnter(fresh){const u=SB.ses.user,em=(u.email||CLD.email).toLowerCase(),uid=u.id;let pr,sb,ad,cf;
-try{[pr,sb,ad,cf]=await Promise.all([SB.get("profiles?select=biz,blocked&id=eq."+uid),SB.get("subscriptions?select=plan,expires_at&user_id=eq."+uid),SB.get("app_data?select=data,updated_at&user_id=eq."+uid),SB.get("app_config?select=key,value")])}
+async function cldEnter(fresh,bg){const prev=bg&&D?JSON.stringify(D):null,u=SB.ses.user,em=(u.email||CLD.email).toLowerCase(),uid=u.id;let pr,sb,ad,cf;
+try{[pr,sb,ad,cf]=await Promise.all([SB.get("profiles?select=biz,blocked,role&id=eq."+uid),SB.get("subscriptions?select=plan,expires_at&user_id=eq."+uid),SB.get("app_data?select=data,updated_at&user_id=eq."+uid),SB.get("app_config?select=key,value")])}
 catch(e){if(!e.offline)throw e;const c=LS.g("ff_cs",null);if(!(c&&c.uid===uid&&LS.g("ff_d_"+em,null)))throw e;pr=[{}];sb=[c.sub];ad=[];cf=[]}
 if(pr[0]&&pr[0].blocked){CLD.v="blk";return render()}
-CLD.uid=uid;CLD.email=em;CLD.sub=sb[0]||{plan:"free"};LS.s("ff_cs",{uid,sub:CLD.sub});
+CLD.role=(pr[0]&&pr[0].role)||"user";CLD.uid=uid;CLD.email=em;if(CLD.role==="admin"&&!cldAsMember()){CLD.v="adm";return render()}
+CLD.sub=sb[0]||{plan:"free"};LS.s("ff_cs",{uid,sub:CLD.sub});
 const loc=LS.g("ff_d_"+em,null),row=ad[0],dirty=LS.g("ff_dirty_"+uid,0);let d;
 if(loc&&(dirty||!row))d=loc;else if(row)d=row.data;else d={biz:(pr[0]&&pr[0].biz)||CLD.biz||"My business",bt:"other",plan:"free",tpl:FM,members:[],pays:[],log:[]};
 if(!row)LS.s("ff_dirty_"+uid,1);
 if(row)CLD.ua=row.updated_at;
 ses=em;DC[em]=d;load();cldPlan();cf.forEach(x=>CLD.cfg[x.key]=x.value);
-if(fresh)UNL=em;T="home";CP=false;CLD.v="app";render();
+if(fresh)UNL=em;if(!bg){T="home";CP=false}CLD.v="app";if(!bg||prev!==JSON.stringify(D))render();cldPill();
 if(LS.g("ff_dirty_"+uid,0))cldFlush();SB.rpc("touch_seen").catch(()=>{});cldCfg()}
 function cldPlan(){const s=CLD.sub||{plan:"free"};if(s.plan==="pro"&&s.expires_at){const x=new Date(s.expires_at);D.plan="pro";D.cpn={c:"PRO",t:"trial",v:0,m:0,at:"",end:iso(x),ex:+x}}else{D.plan="free";D.cpn=null}}
 async function cldSub(){CLD.sub=(await SB.get("subscriptions?select=plan,expires_at&user_id=eq."+CLD.uid))[0]||{plan:"free"};LS.s("ff_cs",{uid:CLD.uid,sub:CLD.sub})}
@@ -1036,7 +1044,7 @@ addEventListener("online",()=>{if(CLD.uid&&LS.g("ff_dirty_"+CLD.uid,0))cldFlush(
 document.addEventListener("visibilitychange",()=>{if(document.hidden){if(CLD.uid&&LS.g("ff_dirty_"+CLD.uid,0))cldFlush()}else cldSync()});
 async function cldOut(){clearTimeout(cldT);const em=ses,uid=CLD.uid;if(uid&&D&&LS.g("ff_dirty_"+uid,0))await cldFlush();
 if(uid&&!LS.g("ff_dirty_"+uid,0)&&em){try{localStorage.removeItem("ff_d_"+em)}catch(e){}}
-await SB.out();UNL="";ses=null;D=null;DC={};CLD.uid=null;CLD.sub=null;CLD.v="in";const b=$("cbn");if(b)b.remove();render()}
+await SB.out();UNL="";ses=null;D=null;DC={};CLD.uid=null;CLD.sub=null;CLD.role="";CLD.v="in";try{sessionStorage.removeItem("ff_asm")}catch(e){}["cbn","cadm"].forEach(i=>{const b=$(i);if(b)b.remove()});render()}
 function out(){cldOut()}
 /* my plan + coupon */
 function pricing(){const s=CLD.sub||{plan:"free"},pro=s.plan==="pro",ex=s.expires_at?new Date(s.expires_at):null,act=pro&&ex&&ex>new Date(),left=ex?Math.max(0,Math.ceil((ex-new Date())/864e5)):0;
@@ -1064,6 +1072,13 @@ if(a&&a.on&&a.text&&seen!==a.text)cldBanner(a.text,()=>{try{sessionStorage.setIt
 async function cldUpdate(){try{const r=await navigator.serviceWorker.getRegistration();if(r){await r.update();if(r.waiting)r.waiting.postMessage("skip")}const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}catch(e){}location.reload()}
 if("serviceWorker"in navigator){addEventListener("load",()=>navigator.serviceWorker.register("sw.js").then(r=>{r.addEventListener("updatefound",()=>{const n=r.installing;if(n)n.addEventListener("statechange",()=>{if(n.state==="installed"&&navigator.serviceWorker.controller)cldBanner("Update ready · tap to refresh",()=>{n.postMessage("skip")},1)})})}).catch(()=>{}));
 let rl=!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!rl){rl=1;location.reload()}})}
+
+/* admin: opens only when the server says this account is an admin */
+const cldAsMember=()=>{try{return sessionStorage.getItem("ff_asm")==="1"}catch(e){return false}};
+function cldAdminLoad(){return window.FFA?Promise.resolve():new Promise((ok,no)=>{const e=document.createElement("script");e.src="admin.js";e.onload=ok;e.onerror=()=>no({message:"Couldn’t load the admin panel. Check your connection."});document.head.appendChild(e)})}
+function cldMember(){try{sessionStorage.setItem("ff_asm","1")}catch(e){}CLD.v="boot";render();cldGo(()=>cldEnter(true))}
+function cldPill(){const o=$("cadm");if(CLD.role!=="admin"||!cldAsMember()||CLD.v!=="app"){if(o)o.remove();return}
+if(o)return;const b=document.createElement("button");b.id="cadm";b.className="cbn";b.textContent="← Admin";b.style.cssText="left:12px;right:auto;margin:0;width:auto";b.onclick=()=>{try{sessionStorage.removeItem("ff_asm")}catch(e){}b.remove();CLD.v="adm";render()};document.body.appendChild(b)}
 
 cldBoot();
 </script></body></html>
