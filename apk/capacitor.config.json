@@ -1,0 +1,9 @@
+{
+  "appId": "com.feeflow.app",
+  "appName": "FeeFlow",
+  "webDir": "www",
+  "server": {
+    "url": "https://feeflow.akhile748.workers.dev",
+    "androidScheme": "https"
+  }
+}
