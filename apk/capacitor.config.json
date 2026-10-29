@@ -3,7 +3,7 @@
   "appName": "FeeFlow",
   "webDir": "www",
   "server": {
-    "url": "https://feeflow.akhile748.workers.dev",
+    "url": "https://YOUR_SITE.pages.dev",
     "androidScheme": "https"
   }
 }
